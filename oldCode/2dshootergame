@@ -1,0 +1,1076 @@
+'Norbert Slinko Project
+Module MainGame 'Game Module
+    Public Const maxY As Integer = 14 'defines the size of the board
+    Public Const maxX As Integer = 34
+
+    Dim Board(maxX, maxY) As String
+
+    Dim PlayerThread As New System.Threading.Thread(AddressOf PlayerSub) 'defines threads
+    Dim EnemyBulletBehaviourThread As New System.Threading.Thread(AddressOf EnemyBulletBehaviourSub)
+    Dim DisplayBoardThread As New System.Threading.Thread(AddressOf PrintBoard)
+
+    Dim ThreadsStarted As Boolean = False 'to know  whether to start threads
+    Dim GameStart As Boolean = False 'to know if game is running and
+
+    Sub Main()
+        Console.WriteLine("In Game: Use left/right arrow key to move")
+        Console.WriteLine("       : Use space bar to shoot")
+
+        player.Name = InputName()
+
+        'resets the enemy, player and bullet variables of the game
+        Call ResetVariables()
+
+        'starts or resumes threads
+        If Not ThreadsStarted Then
+            DisplayBoardThread.Start()
+            PlayerThread.Start()
+            EnemyBulletBehaviourThread.Start()
+            ThreadsStarted = True
+            GameStart = True
+        Else
+            GameStart = True
+        End If
+
+        'wait unil the game ends
+        Do
+            Threading.Thread.Sleep(100)
+        Loop While GameStart = True
+        Threading.Thread.Sleep(100)
+
+
+        Call StoreGameFiles()
+
+    End Sub
+
+    Function InputName() As String
+        Dim UserName As String
+        Dim NameValid As Boolean
+
+        'iterate until a valid name was input
+        Do
+            Console.Write("Input Player Name: ")
+            UserName = Console.ReadLine()
+            'check that name is more than 0, but less that 13 characters
+            If Mid(UserName, 1, 1) = "" Or Not (Mid(UserName, 13, 1) = "") Then
+                Console.WriteLine("Input a name with 12 or less characters and more than 0 characters")
+                NameValid = False
+            Else
+                NameValid = True
+            End If
+        Loop Until NameValid
+
+        Return UserName
+    End Function
+    Sub StoreGameFiles()
+        Dim ReplayNum As Integer
+        ReplayNum = 0 'ReplayN.txt file, N = ReplayNum
+
+        'write name and score to file
+        FileOpen(1, FileLocation + "Names, scores.txt", OpenMode.Append)
+        Print(1, player.Name)
+        Print(1, ",")
+        PrintLine(1, player.score)
+        FileClose(1)
+
+        'define ReplayNum
+        FileOpen(2, FileLocation + "Names, scores.txt", OpenMode.Input)
+        Do Until EOF(2)
+            LineInput(2)
+            ReplayNum += 1
+        Loop
+        FileClose(2)
+
+        'write game replay to file
+        FileOpen(3, FileLocation + "Replay" + ReplayNum.ToString + ".txt", OpenMode.Output)
+
+        Dim ReplayX, ReplayY, ReplayT As Integer
+        ReplayX = 0
+        ReplayY = 0
+        ReplayT = 0
+
+        Dim SpaceNum As Integer
+
+        'compresses the file
+        Do Until ReplayBoard(ReplayT, 0, 0) = ""
+            For ReplayY = 0 To maxY
+                For ReplayX = 0 To maxX
+                    'only write if it is a non-spacebar character
+                    If ReplayBoard(ReplayT, ReplayX, ReplayY) = " " Then
+                        SpaceNum += 1
+                    Else
+                        If SpaceNum > 0 Then
+                            Write(3, SpaceNum)
+                            SpaceNum = 0
+                        End If
+                        Write(3, (ReplayBoard(ReplayT, ReplayX, ReplayY)))
+                    End If
+                Next
+            Next
+            ReplayT += 1
+        Loop
+
+        FileClose(3)
+    End Sub
+
+    Sub ResetVariables() 'resets the player, enemy, and bullet variables
+        Dim x, y As Integer
+
+        'reset board array
+        For y = 0 To maxY
+            For x = 0 To maxX
+                Board(x, y) = " "
+            Next
+        Next
+
+        'reset player variables
+        player.x = 1
+        player.Lives = 3
+        player.score = 0
+        ShootTime = 0
+
+        'reset bullet variables and enemy map array
+        ReDim Bullets(0)
+        ReDim ReplayBoard(2 ^ 16, maxX, maxY)
+        ReDim EnemyMap(maxX, maxY)
+
+        'reset enemy variables
+        Call InitializeEnemy()
+        Call UpdatePlayerLocation(0)
+
+    End Sub
+
+
+    Structure PlayerInformation
+        Dim x As Integer
+        '/// player y position will always be 13
+        Dim Lives As Integer
+        Dim score As Integer
+        Dim Name As String
+
+    End Structure
+
+
+    Dim player As PlayerInformation
+    Sub PlayerSub()
+        Do
+            Do 'while game is running
+                If Console.KeyAvailable Then 'check if player presses a key
+                    Call KeyboardControls() 'if yes, try to move character
+                End If
+            Loop While player.Lives > 0
+            GameStart = False
+
+            Do 'wait until game starts agan
+                Threading.Thread.Sleep(100)
+
+                If ProgramEnd Then
+                    Exit Sub
+                End If
+            Loop Until GameStart
+
+            Threading.Thread.Sleep(200)
+            UpdatePlayerLocation(0)
+        Loop Until ProgramEnd 'iterate until player exits the program
+    End Sub
+
+    Sub KeyboardControls()
+        Dim KeyboardInput As String
+        KeyboardInput = Console.ReadKey(True).Key.ToString 'obtains the key the user pressed
+
+        Select Case KeyboardInput 'run the correct function depending on what key is pressed
+            Case "LeftArrow"
+                If player.x <> 0 Then
+                    UpdatePlayerLocation(-1)
+                End If
+
+            Case "RightArrow"
+                If player.x < maxX - 2 Then
+                    UpdatePlayerLocation(1)
+                End If
+
+            Case "Spacebar"
+                Call PlayerShoot()
+
+        End Select
+    End Sub
+
+    Sub UpdatePlayerLocation(ByVal PlayerMove As SByte)
+        ' move variable indicates whether to move left or right
+        ' +1 is right, -1 is left
+        Board(player.x, 13) = " "
+        Board(player.x + 1, 13) = " "
+        Board(player.x + 2, 13) = " " 'current position chenged to empty space
+        EnemyMap(player.x, 13) = 0
+        EnemyMap(player.x + 1, 13) = 0
+        EnemyMap(player.x + 2, 13) = 0
+
+        player.x += PlayerMove 'player moves
+
+        Board(player.x, 13) = "-"
+        Board(player.x + 1, 13) = "^"
+        Board(player.x + 2, 13) = "-" 'new position changed to show player
+        EnemyMap(player.x, 13) = -1
+        EnemyMap(player.x + 1, 13) = -1
+        EnemyMap(player.x + 2, 13) = -1
+
+    End Sub
+
+    Structure BulletInformation
+        Dim x, y, direction As Integer
+        'direction is +1 for down, -1 for up
+        Dim alive As Boolean
+        Dim shape As String
+    End Structure
+
+    Dim Bullets(0) As BulletInformation
+
+    Dim ShootTime As Integer 'global variable to not be reset when the subprogram ends
+    Sub PlayerShoot()
+        Dim n As Integer
+        Dim WaitTime As Integer
+
+        'get time between last time the player shot in milliseconds
+        WaitTime = My.Computer.Clock.TickCount - ShootTime
+
+        If WaitTime > 750 Then
+            'player shoot function below
+            n = -1
+            Do
+                n += 1
+                '/// if more array slots needed, then increases the array size by 1
+                If n > UBound(Bullets) Then
+                    ReDim Preserve Bullets(UBound(Bullets) + 1)
+                End If
+
+            Loop Until Bullets(n).alive = False
+
+            Bullets(n).direction = -1
+            Bullets(n).alive = True
+            Bullets(n).x = player.x + 1
+            Bullets(n).y = 12
+            Bullets(n).shape = "*"
+            EnemyMap(player.x + 1, 12) = n + 7
+            'lowest array position is 0, 
+            '0 + 7 Is the first number that won't interfere
+            'with enemies
+
+            ShootTime = My.Computer.Clock.TickCount
+
+        End If
+
+    End Sub
+
+    Structure EnemyInformation
+        Dim x, y As Integer
+        Dim alive As Boolean
+    End Structure
+
+
+    Dim EnemyMap(maxX, maxY) As Integer 'displays each unit (player, enemy, bullets) with a unique number
+
+    Dim EnemyArray(6) As EnemyInformation
+    Dim EnemiesAlive As Integer
+
+    Dim WaveNum As Integer
+
+    Sub EnemyBulletBehaviourSub()
+        Dim GameTimer, LastMoveEnemies, LastShoot, LastMoveBullets As Integer
+        Dim EnemiesMoveWait, EnemiesShootWait As Integer
+
+        Do 'iterate until user exits program
+            'reset local variables when game starts
+            WaveNum = 1
+            GameTimer = 0
+            LastMoveBullets = 0
+            LastMoveEnemies = 0
+            LastShoot = 0
+            EnemiesMoveWait = 40
+            EnemiesShootWait = 60
+
+            Do
+                If GameTimer >= LastMoveBullets + 5 Then 'move bullets if waited enough time
+                    Call MoveBullets()
+                    LastMoveBullets = GameTimer
+                End If
+
+                If GameTimer >= LastMoveEnemies + EnemiesMoveWait Then 'move eenemies if waited enough time
+                    Call MoveEnemies()
+                    LastMoveEnemies = GameTimer
+                End If
+
+                If GameTimer >= LastShoot + EnemiesShootWait Then 'enemies shoot if waited enough time
+                    Call EnemyShoot()
+                    LastShoot = GameTimer
+                End If
+
+                If EnemiesAlive <= 0 Then 'when all enemies die
+
+                    Call NextWave()
+                    GameTimer = 0 'reset local variables for new wave
+                    LastMoveEnemies = 0
+                    LastShoot = 0
+                    LastMoveBullets = 0
+                    If EnemiesMoveWait > 20 Then 'decrease wait times to increase difficulty
+                        EnemiesMoveWait = EnemiesMoveWait - 2
+                    End If
+                    If EnemiesShootWait > 15 Then
+                        EnemiesShootWait = EnemiesShootWait - 3
+                    End If
+                End If
+
+                Threading.Thread.Sleep(25)
+                GameTimer += 1
+
+            Loop While GameStart = True
+
+            Do 'wait until game starts again
+                Threading.Thread.Sleep(100)
+                If ProgramEnd Then
+                    Exit Sub
+                End If
+            Loop Until GameStart
+
+            Threading.Thread.Sleep(200)
+        Loop Until ProgramEnd
+    End Sub
+
+    Sub NextWave()
+
+        player.score += 100
+
+        Do Until BoardInterrupt = True 'wait until it is sage to stop threads
+            Threading.Thread.Sleep(32)
+        Loop
+        PlayerThread.Suspend()
+        DisplayBoardThread.Suspend()
+        Console.Clear()
+
+        For WriteY = 0 To 6 'display board and message
+            For WriteX = 0 To maxX
+                Console.Write(Board(WriteX, WriteY))
+            Next
+            Console.WriteLine()
+        Next
+        Console.WriteLine("             Wave {0} Cleared", WaveNum)
+
+        For WriteY = 8 To maxY
+            For WriteX = 0 To maxX
+                Console.Write(Board(WriteX, WriteY))
+            Next
+            Console.WriteLine()
+        Next
+        Console.WriteLine("Player Lives: {0}", player.Lives)
+        Console.WriteLine("Player Score: {0}", player.score)
+
+
+        Call ClearBoard() 'reset board and EnemyMap state
+
+        Threading.Thread.Sleep(3000) 'display message for 3 seconds
+        WaveNum += 1
+        PlayerThread.Resume()
+        DisplayBoardThread.Resume()
+
+    End Sub
+
+    Sub ClearBoard() 'reset board and EnemyMap state
+
+        ReDim Bullets(0)
+
+        For yPosition = 0 To maxY
+            For xPosition = 0 To maxX
+                EnemyMap(xPosition, yPosition) = 0
+                Board(xPosition, yPosition) = " "
+            Next
+        Next
+
+        Call InitializeEnemy()
+        UpdatePlayerLocation(0)
+    End Sub
+
+    Sub InitializeEnemy() 'reset enemy positions
+        Dim yPosition, xPosition As Integer
+        EnemiesAlive = 6
+
+        EnemyArray(1).x = 2
+        EnemyArray(1).y = 1
+        EnemyArray(1).alive = True
+        For xPosition = 0 To 2 'width of enemy
+            For yPosition = 0 To 1 'height of enemy
+                EnemyMap(EnemyArray(1).x + xPosition, EnemyArray(1).y + yPosition) = 1
+            Next
+        Next
+
+
+        EnemyArray(2).x = 6
+        EnemyArray(2).y = 1
+        EnemyArray(2).alive = True
+        For xPosition = 0 To 2
+            For yPosition = 0 To 1
+                EnemyMap(EnemyArray(2).x + xPosition, EnemyArray(2).y + yPosition) = 2
+            Next
+        Next
+
+        EnemyArray(3).x = 10
+        EnemyArray(3).y = 1
+        EnemyArray(3).alive = True
+        For xPosition = 0 To 2
+            For yPosition = 0 To 1
+                EnemyMap(EnemyArray(3).x + xPosition, EnemyArray(3).y + yPosition) = 3
+            Next
+        Next
+
+        EnemyArray(4).x = 2
+        EnemyArray(4).y = 4
+        EnemyArray(4).alive = True
+        For xPosition = 0 To 2
+            For yPosition = 0 To 1
+                EnemyMap(EnemyArray(4).x + xPosition, EnemyArray(4).y + yPosition) = 4
+            Next
+        Next
+
+        EnemyArray(5).x = 6
+        EnemyArray(5).y = 4
+        EnemyArray(5).alive = True
+        For xPosition = 0 To 2
+            For yPosition = 0 To 1
+                EnemyMap(EnemyArray(5).x + xPosition, EnemyArray(5).y + yPosition) = 5
+            Next
+        Next
+
+        EnemyArray(6).x = 10
+        EnemyArray(6).y = 4
+        EnemyArray(6).alive = True
+        For xPosition = 0 To 2
+            For yPosition = 0 To 1
+                EnemyMap(EnemyArray(6).x + xPosition, EnemyArray(6).y + yPosition) = 6
+            Next
+        Next
+
+        For yPosition = 0 To maxY
+            For xPosition = 0 To maxX
+                If EnemyMap(xPosition, yPosition) > 0 And EnemyMap(xPosition, yPosition) <= 6 Then
+                    Board(xPosition, yPosition) = "X"
+                End If
+            Next
+        Next
+
+
+
+    End Sub
+
+    Dim AliveEnemyArray(6) As Integer 'contains all the alive enemies
+    Sub EnemyShoot()
+        Dim ShootEnemy, BulletIndex, counter As Integer
+        Dim RandomEnemyIndex As Random = New Random()
+
+        ReDim AliveEnemyArray(EnemiesAlive)
+        counter = 0
+
+        For n As Integer = 1 To 6
+            If EnemyArray(n).alive = True Then
+                AliveEnemyArray(counter) = n
+                counter += 1
+            End If
+        Next
+
+        ShootEnemy = AliveEnemyArray(RandomEnemyIndex.Next(0, EnemiesAlive)) 'choose random enemy
+
+        BulletIndex = -1 'find next free index in bullets array
+        Do
+            BulletIndex += 1
+            '/// if more array slots needed, then increases the array size by 1
+            If BulletIndex > UBound(Bullets) Then
+                ReDim Preserve Bullets(UBound(Bullets) + 1)
+            End If
+
+        Loop Until Bullets(BulletIndex).alive = False
+
+        Bullets(BulletIndex).direction = 1 'shoot bullet, set bullet variables
+        Bullets(BulletIndex).alive = True
+        Bullets(BulletIndex).x = EnemyArray(ShootEnemy).x + 1
+        Bullets(BulletIndex).y = EnemyArray(ShootEnemy).y + 2
+        Bullets(BulletIndex).shape = "!"
+        EnemyMap(Bullets(BulletIndex).x, Bullets(BulletIndex).y) = BulletIndex + 7
+
+    End Sub
+
+    Dim EnemyDirection As SByte = 1 'direction is 1 or -1
+    Sub MoveEnemies()
+        Dim EnemyNum, LeftMost, RightMost, Lowest As Integer
+        LeftMost = maxX
+        RightMost = 0
+        Lowest = 0
+
+        For EnemyNum = 1 To 6 'find leftmost, rightmost, and lowest enemies
+            If EnemyArray(EnemyNum).alive = True Then
+                If EnemyArray(EnemyNum).x < LeftMost Then
+                    LeftMost = EnemyArray(EnemyNum).x
+                End If
+                If EnemyArray(EnemyNum).x > RightMost Then
+                    RightMost = EnemyArray(EnemyNum).x
+                End If
+                If EnemyArray(EnemyNum).y > Lowest Then
+                    Lowest = EnemyArray(EnemyNum).y
+                End If
+            End If
+        Next
+
+        'move enemies, and possibly change directions
+        For EnemyNum = 1 To 6
+            If EnemyArray(EnemyNum).alive = True Then
+                UpdateEnemyLocation(EnemyNum, False)
+
+                If LeftMost <= 1 Then 'if on edge
+                    EnemyDirection = 1 'change directions
+                    If Lowest < 8 Then
+                        EnemyArray(EnemyNum).y += 1 'move down
+                    End If
+                    EnemyArray(EnemyNum).x += EnemyDirection
+
+                ElseIf RightMost >= 31 Then
+                    EnemyDirection = -1
+                    If Lowest < 8 Then
+                        EnemyArray(EnemyNum).y += 1
+                    End If
+                    EnemyArray(EnemyNum).x += EnemyDirection
+
+                Else 'else move left or right
+                    EnemyArray(EnemyNum).x += EnemyDirection
+                End If
+
+                UpdateEnemyLocation(EnemyNum, True)
+            End If
+        Next
+    End Sub
+
+    Sub UpdateEnemyLocation(ByVal EnemyNumber As Integer, ByVal Moved As Boolean)
+        'Updated the EnemyMap and Board locations to 0 and " " before changing the enemy position, If FALSE
+        'If TRUE, updates the EnemyMap and Board locations the EnemyNumber and "X"
+
+        If Moved Then
+            For xPosition As Integer = 0 To 2 'width of enemy
+                For yPosition As Integer = 0 To 1 'height of enemy
+                    EnemyMap(EnemyArray(EnemyNumber).x + xPosition, EnemyArray(EnemyNumber).y + yPosition) = EnemyNumber
+                    Board(EnemyArray(EnemyNumber).x + xPosition, EnemyArray(EnemyNumber).y + yPosition) = "X"
+                Next
+            Next
+        Else
+            For xPosition As Integer = 0 To 2 'width of enemy
+                For yPosition As Integer = 0 To 1 'height of enemy
+                    EnemyMap(EnemyArray(EnemyNumber).x + xPosition, EnemyArray(EnemyNumber).y + yPosition) = 0
+                    Board(EnemyArray(EnemyNumber).x + xPosition, EnemyArray(EnemyNumber).y + yPosition) = " "
+                Next
+            Next
+
+        End If
+
+    End Sub
+
+    Sub MoveBullets()
+        Dim index, CollisionType As Integer
+        For index = 0 To UBound(Bullets) 'iterates through array
+            CollisionType = 0
+
+            If Bullets(index).alive = True Then 'if bullet is currently active, move bullet and check for collisions
+                Board(Bullets(index).x, Bullets(index).y) = " "
+                EnemyMap(Bullets(index).x, Bullets(index).y) = 0 'set current position to nothing
+                Bullets(index).y += Bullets(index).direction 'move bullet
+
+                If Bullets(index).y < 0 Or Bullets(index).y > maxY Then 'if moved out of board
+                    Bullets(index).y = 0
+                    Bullets(index).alive = False 'kill bullet
+                Else 'if still on board
+                    CollisionType = EnemyMap(Bullets(index).x, Bullets(index).y) 'Collision type to see if any collisions occur
+                End If
+
+                If Bullets(index).alive = True And CollisionType = 0 Then 'if 0, then no collision
+                    Board(Bullets(index).x, Bullets(index).y) = Bullets(index).shape
+                    EnemyMap(Bullets(index).x, Bullets(index).y) = index + 7
+
+                    'player is hit
+                ElseIf CollisionType = -1 Then
+                    player.Lives -= 1
+                    Bullets(index).alive = False
+
+                    'If Enemy is Hit
+                ElseIf CollisionType > 0 And CollisionType <= 6 And Bullets(index).shape = "*" Then
+                    EnemyArray(CollisionType).alive = False
+                    Bullets(index).alive = False
+                    EnemiesAlive -= 1
+                    player.score += 10
+                    Call KillEnemy(CollisionType)
+
+                    'another bullet is hit
+                ElseIf CollisionType > 6 Then
+                    Bullets(CollisionType - 7).alive = False
+                    Bullets(index).alive = False
+                    Board(Bullets(index).x, Bullets(index).y) = " "
+                    EnemyMap(Bullets(index).x, Bullets(index).y) = 0
+
+                End If
+            End If
+        Next
+    End Sub
+
+    Sub KillEnemy(ByVal EnemyIndex As Integer)
+        Dim yAxis, xAxis As Integer
+
+        'erase enemy from board and EnemyMap
+        For xAxis = 0 To 2 'width of enemy
+            For yAxis = 0 To 1 'height of enemy
+                EnemyMap(EnemyArray(EnemyIndex).x + xAxis, EnemyArray(EnemyIndex).y + yAxis) = 0
+                Board(EnemyArray(EnemyIndex).x + xAxis, EnemyArray(EnemyIndex).y + yAxis) = " "
+            Next
+        Next
+    End Sub
+
+    Dim ReplayBoard(2 ^ 16, maxX, maxY) As String
+
+    Dim BoardInterrupt As Boolean
+    Sub PrintBoard()
+        Dim WriteX, WriteY As Integer
+        Dim ReplayTime As Integer
+        Do 'iterate until program is closed
+            Do While Board(0, 0) = Nothing 'wait until board is set up
+                Threading.Thread.Sleep(66)
+            Loop
+            ReplayTime = 0
+            Do 'while game is running
+                BoardInterrupt = True 'Only let the PrintBoard thread stop if it is safe
+                Threading.Thread.Sleep(66)
+                BoardInterrupt = False
+                Console.Clear()
+                For WriteY = 0 To maxY
+                    For WriteX = 0 To maxX
+                        Console.Write(Board(WriteX, WriteY))
+                        ReplayBoard(ReplayTime, WriteX, WriteY) = Board(WriteX, WriteY)
+                    Next
+                    Console.WriteLine()
+                Next
+                Console.WriteLine("Player Lives: {0}", player.Lives)
+                Console.WriteLine("Player Score: {0}", player.score)
+
+                ReplayTime += 1
+            Loop While GameStart = True
+            'when game ends display game over 
+            Console.WriteLine("                  GAME OVER")
+
+            Do 'wait until game starts again
+                Threading.Thread.Sleep(100)
+
+                If ProgramEnd Then
+                    Exit Sub
+                End If
+            Loop Until GameStart
+
+        Loop Until ProgramEnd
+    End Sub
+
+
+End Module
+
+Module Module1 'Menus Module
+
+    Public FileLocation As String 'used in MainGame module
+
+    Public ProgramEnd As Boolean = False 'used in MainGame module
+
+    Sub Main() '/// Main Menu       
+        Dim RunModule As String
+        If FileLocation = "" Then 'if FileLocation is not defined yet
+            Call CreateSaveFilesFolder() 'create folder and define FileLOaction
+        End If
+
+        If ProgramEnd = False Then
+            RunModule = MenuNavigation(2, "Main") 'user selects an option
+            Select Case RunModule 'run selected program
+                Case 0
+                    Call MainGame.Main()
+
+                Case 1
+                    Call HighScoresMenu()
+
+                Case 2
+                    ProgramEnd = True
+                    Exit Sub
+            End Select
+
+            Call Main() 'after user returns to the program, show main menu again
+        End If
+    End Sub
+
+    Sub CreateSaveFilesFolder()
+
+        FileLocation = PathToEXE() 'find path to .exe file
+        'create folder
+        If (Not System.IO.Directory.Exists(FileLocation)) Then
+            System.IO.Directory.CreateDirectory(FileLocation)
+        End If
+        'Code to check if folder/file exists and create folder from:
+        'https://stackoverflow.com/questions/85996/how-do-i-create-a-folder-in-vb-if-it-doesnt-exist
+
+        'Create the file if it doesn't exist file. Use append to not erase and existing data
+        FileOpen(1, FileLocation + "Names, scores.txt", OpenMode.Append)
+        FileClose(1)
+
+    End Sub
+
+    Function PathToEXE()
+        Dim FilePath As String
+        FilePath = System.Reflection.Assembly.GetExecutingAssembly().Location
+        'Code to find path to .exe file from:
+        'https://stackoverflow.com/questions/300578/get-the-startup-path-in-a-vb-net-console-exe
+
+        Dim CharCount, SlashPos As Integer
+        Dim letter As String
+
+        CharCount = 1
+        'find the last \ character
+        Do
+            letter = Mid(FilePath, CharCount, 1)
+            If letter = "\" Then
+                SlashPos = CharCount
+            End If
+            CharCount += 1
+        Loop Until letter = ""
+
+        'replace .exe file with folder path
+        FilePath = Mid(FilePath, 1, SlashPos) + "2DShooterFiles\"
+
+        Return FilePath
+    End Function
+
+    Function MenuNavigation(ByVal MaxIndex As Byte, ByVal MenuType As String,
+                            Optional ByVal HighScoresArray() As String = Nothing) As String
+        Dim MenuSelectedIndex As Integer
+        Dim Selected As Boolean
+        Dim KeyInput As String
+
+        MenuSelectedIndex = 0
+        If MenuType = "Main" Then 'display the correct menu
+            Call PrintMainMenu(MenuSelectedIndex)
+        Else
+            Call PrintHighScoresMenu(MenuSelectedIndex, HighScoresArray)
+        End If
+
+        Selected = False
+        Do
+            KeyInput = Console.ReadKey(True).Key.ToString
+
+            Select Case KeyInput
+                Case "UpArrow" 'highlighted option moves up
+                    MenuSelectedIndex -= 1
+                    If MenuSelectedIndex < 0 Then
+                        MenuSelectedIndex = MaxIndex
+                    End If
+                    If MenuType = "Main" Then 'display the correct menu
+                        Call PrintMainMenu(MenuSelectedIndex)
+                    Else
+                        Call PrintHighScoresMenu(MenuSelectedIndex, HighScoresArray)
+                    End If
+
+                Case "DownArrow" 'highlighted option moves down
+                    MenuSelectedIndex += 1
+                    If MenuSelectedIndex > MaxIndex Then
+                        MenuSelectedIndex = 0
+                    End If
+                    If MenuType = "Main" Then 'display the correct menu
+                        Call PrintMainMenu(MenuSelectedIndex)
+                    Else
+                        Call PrintHighScoresMenu(MenuSelectedIndex, HighScoresArray)
+                    End If
+
+                Case "Spacebar" 'user selects current option
+                    Selected = True
+
+            End Select
+        Loop Until Selected
+
+        Return MenuSelectedIndex
+
+    End Function
+
+    Sub PrintHighScoresMenu(ByVal HighlightedIndex As Byte, ByVal ScoresNames() As String)
+        Console.Clear()
+        Console.WriteLine()
+        Console.WriteLine()
+        Console.ForegroundColor = ConsoleColor.White
+        '///If statments check which line needs to be highlighted
+        If HighlightedIndex = 0 AndAlso Not (HighlightedIndex = MaxHighScoreIndex) Then
+            Console.ForegroundColor = ConsoleColor.Red
+            Console.WriteLine(" > <{0}>  <{1}> ", ScoresNames(0), ScoresNames(1))
+            Console.ForegroundColor = ConsoleColor.White
+        Else
+            Console.WriteLine("   <{0}>  <{1}> ", ScoresNames(0), ScoresNames(1))
+        End If
+        Console.WriteLine()
+
+        If HighlightedIndex = 1 AndAlso Not (HighlightedIndex = MaxHighScoreIndex) Then
+            Console.ForegroundColor = ConsoleColor.Red
+            Console.WriteLine(" > <{0}>  <{1}> ", ScoresNames(2), ScoresNames(3))
+            Console.ForegroundColor = ConsoleColor.White
+        Else
+            Console.WriteLine("   <{0}>  <{1}> ", ScoresNames(2), ScoresNames(3))
+        End If
+        Console.WriteLine()
+
+        If HighlightedIndex = 2 AndAlso Not (HighlightedIndex = MaxHighScoreIndex) Then
+            Console.ForegroundColor = ConsoleColor.Red
+            Console.WriteLine(" > <{0}>  <{1}> ", ScoresNames(4), ScoresNames(5))
+            Console.ForegroundColor = ConsoleColor.White
+        Else
+            Console.WriteLine("   <{0}>  <{1}> ", ScoresNames(4), ScoresNames(5))
+        End If
+        Console.WriteLine()
+
+        If HighlightedIndex = 3 AndAlso Not (HighlightedIndex = MaxHighScoreIndex) Then
+            Console.ForegroundColor = ConsoleColor.Red
+            Console.WriteLine(" > <{0}>  <{1}> ", ScoresNames(6), ScoresNames(7))
+            Console.ForegroundColor = ConsoleColor.White
+        Else
+            Console.WriteLine("   <{0}>  <{1}> ", ScoresNames(6), ScoresNames(7))
+        End If
+        Console.WriteLine()
+
+        If HighlightedIndex = 4 AndAlso Not (HighlightedIndex = MaxHighScoreIndex) Then
+            Console.ForegroundColor = ConsoleColor.Red
+            Console.WriteLine(" > <{0}>  <{1}> ", ScoresNames(8), ScoresNames(9))
+            Console.ForegroundColor = ConsoleColor.White
+        Else
+            Console.WriteLine("   <{0}>  <{1}> ", ScoresNames(8), ScoresNames(9))
+        End If
+        Console.WriteLine()
+
+        If HighlightedIndex = MaxHighScoreIndex Then
+            Console.ForegroundColor = ConsoleColor.Red
+            Console.WriteLine(" > BACK")
+            Console.ForegroundColor = ConsoleColor.White
+        Else
+            Console.WriteLine("   BACK")
+        End If
+    End Sub
+
+    Sub PrintMainMenu(ByVal HighlightedIndex As Byte)
+
+        Console.Clear()
+        Console.ForegroundColor = ConsoleColor.Gray
+        Console.WriteLine()
+        Console.WriteLine("   Use down and up arrows to")
+        Console.WriteLine("   move and space to select ")
+        Console.WriteLine("   a choice")
+        Console.WriteLine()
+        Console.ForegroundColor = ConsoleColor.White
+        '///If statments check which line needs to be highlighted
+        If HighlightedIndex = 0 Then
+            Console.ForegroundColor = ConsoleColor.Red
+            Console.WriteLine(" > Play Game")
+            Console.ForegroundColor = ConsoleColor.White
+        Else
+            Console.WriteLine("   Play Game")
+        End If
+        Console.WriteLine()
+
+        If HighlightedIndex = 1 Then
+            Console.ForegroundColor = ConsoleColor.Red
+            Console.WriteLine(" > High Scores")
+            Console.ForegroundColor = ConsoleColor.White
+        Else
+            Console.WriteLine("   High Scores")
+        End If
+        Console.WriteLine()
+
+        If HighlightedIndex = 2 Then
+            Console.ForegroundColor = ConsoleColor.Red
+            Console.WriteLine(" > Quit")
+            Console.ForegroundColor = ConsoleColor.White
+        Else
+            Console.WriteLine("   Quit")
+        End If
+
+    End Sub
+
+    Dim MaxHighScoreIndex As Integer
+    Function ReadHighScoresFile() As String()
+        Dim ScoresNamesArray() As String
+        Dim index As Integer
+
+        FileOpen(1, FileLocation + "Names, scores.txt", OpenMode.Input)
+
+        index = 0
+        Do Until EOF(1)
+            ReDim Preserve ScoresNamesArray(index)
+            Input(1, ScoresNamesArray(index))
+            index += 1
+        Loop
+
+        'index is 1 more than the number of items in the array
+        ReDim Preserve ScoresNamesArray(index - 1)
+
+        MaxHighScoreIndex = index / 2
+
+        Call SortScoresArray(ScoresNamesArray)
+
+        ReDim Preserve ScoresNamesArray(9)
+        If MaxHighScoreIndex > 5 Then
+            MaxHighScoreIndex = 5
+        End If
+        FileClose(1)
+
+        'add spaces so that when displaying list, all items are in line with eachother
+        For index = 0 To UBound(ScoresNamesArray) Step 2
+            While Mid(ScoresNamesArray(index), 12) = ""
+                ScoresNamesArray(index) += " "
+            End While
+        Next
+
+        For index = 1 To UBound(ScoresNamesArray) Step 2
+            While Mid(ScoresNamesArray(index), 7) = ""
+                ScoresNamesArray(index) += " "
+            End While
+        Next
+
+        Return ScoresNamesArray
+    End Function
+
+    Sub SortScoresArray(ByRef ArrayToSort() As String)
+        Dim index, Index2, swap3 As Integer
+        Dim swap, swap2 As String
+
+        ReDim MenuReplayIndexArray(MaxHighScoreIndex)
+
+        For index = 0 To UBound(MenuReplayIndexArray)
+            MenuReplayIndexArray(index) = index
+        Next
+
+        For index = 3 To UBound(ArrayToSort) Step 2 'merge sort
+            For Index2 = (index - 2) To 1 Step -2
+                If Int(ArrayToSort(Index2)) < Int(ArrayToSort(Index2 + 2)) Then
+                    'swap the values
+                    swap = ArrayToSort(Index2)
+                    swap2 = ArrayToSort(Index2 - 1)
+                    swap3 = MenuReplayIndexArray((Index2 - 1) / 2)
+
+                    ArrayToSort(Index2) = ArrayToSort(Index2 + 2)
+                    ArrayToSort(Index2 - 1) = ArrayToSort(Index2 + 1)
+                    MenuReplayIndexArray((Index2 - 1) / 2) = MenuReplayIndexArray(((Index2 - 1) / 2) + 1)
+
+                    ArrayToSort(Index2 + 2) = swap
+                    ArrayToSort(Index2 + 1) = swap2
+                    MenuReplayIndexArray(((Index2 - 1) / 2) + 1) = swap3
+
+                Else
+                    Exit For
+                End If
+
+            Next
+        Next
+
+    End Sub
+
+    Dim MenuReplayIndexArray() As Integer
+    Sub HighScoresMenu()
+        Dim SelectedIndex As Byte
+        Dim SaveFile() As String
+
+        SaveFile = ReadHighScoresFile()
+
+        SelectedIndex = MenuNavigation(MaxHighScoreIndex, "HighScore", SaveFile)
+
+        Select Case SelectedIndex
+
+            Case < MaxHighScoreIndex
+                Call ShowReplay(MenuReplayIndexArray(SelectedIndex) + 1)
+                'Show the correct replay
+
+            Case MaxHighScoreIndex
+                Exit Sub
+        End Select
+    End Sub
+
+    Sub ShowReplay(ByVal FineNumber As Integer)
+        Dim PrintX, PrintY, PrintTime, GameTime, NumOfSpaces As Integer
+
+        Dim DisplayReplayBoardTemp(2 ^ 16) As String
+        Dim DisplayReplayBoard(maxX, maxY, 2 ^ 16) As String
+
+        PrintX = 0
+        PrintY = 0
+        PrintTime = 0
+
+        FileOpen(1, FileLocation + "Replay" + FineNumber.ToString + ".txt", OpenMode.Input)
+
+        Do Until EOF(1) 'decompress file
+            Input(1, DisplayReplayBoardTemp(PrintTime)) 'read file
+
+            If Not (DisplayReplayBoardTemp(PrintTime) = "X" Or DisplayReplayBoardTemp(PrintTime) = "!" Or
+                     DisplayReplayBoardTemp(PrintTime) = "-" Or DisplayReplayBoardTemp(PrintTime) = "^" Or
+                      DisplayReplayBoardTemp(PrintTime) = "*") Then 'if non-space (represented with number) character
+
+                NumOfSpaces = DisplayReplayBoardTemp(PrintTime) 'num of spaces represented by a number
+
+                While NumOfSpaces > 0 'iterate until added all the spaces in file (which are represented with a number)
+
+                    DisplayReplayBoard(PrintX, PrintY, GameTime) = " " 'add space to replay array
+
+                    If PrintX = maxX And PrintY = maxY Then 'move across x/y coordinates and increase time
+                        PrintX = 0
+                        PrintY = 0
+                        GameTime += 1
+                    ElseIf PrintX = maxX AndAlso PrintY < maxY Then
+                        PrintX = 0
+                        PrintY += 1
+                    Else
+                        PrintX += 1
+                    End If
+
+                    NumOfSpaces -= 1
+                End While
+
+            Else
+                DisplayReplayBoard(PrintX, PrintY, GameTime) = DisplayReplayBoardTemp(PrintTime)
+
+                If PrintX = maxX And PrintY = maxY Then 'move across x/y coordinates and increase time
+                    PrintX = 0
+                    PrintY = 0
+                    GameTime += 1
+                ElseIf PrintX = maxX Then
+                    PrintX = 0
+                    PrintY += 1
+                Else
+                    PrintX += 1
+                End If
+
+            End If
+
+            PrintTime += 1
+        Loop
+        FileClose(1)
+        PrintTime = 0
+
+        'display replay
+        Do Until DisplayReplayBoard(0, 0, PrintTime) = Nothing
+            Threading.Thread.Sleep(66)
+            Console.Clear()
+            For PrintY = 0 To maxY
+                For PrintX = 0 To maxX
+                    Console.Write(DisplayReplayBoard(PrintX, PrintY, PrintTime))
+
+                    'stop replay if player presses space
+                    If Console.KeyAvailable AndAlso Console.ReadKey(True).Key.ToString = "Spacebar" Then
+                        Exit Sub
+                    End If
+
+                Next
+                Console.WriteLine()
+            Next
+
+            Console.WriteLine("Press Spacebar to go back to menu")
+            PrintTime += 1
+        Loop
+
+        Threading.Thread.Sleep(1000)
+
+    End Sub
+
+End Module
