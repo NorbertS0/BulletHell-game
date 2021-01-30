@@ -45,15 +45,15 @@ class GameBoard:
      
     #intended to run on it's own function
     def printBoardCont(self):
-        self.stopPrnt = True
+        self.prntBoard = True
         while self.prntBoard:
             self.__clearScreen()
             self.printBoard()
-            time.sleep(self._refreshwait)
+            time.sleep(self.__refreshwait)
             
     #stop while loop that prints board
     def stopPrinting(self):
-        self.stopPrnt = False
+        self.prntBoard = False
         
     #takes a dict of { (x, y): 'c' } and modifies characer at pos x,y to 'c' 
     #assumes value is always 1 character (string of len 1)
