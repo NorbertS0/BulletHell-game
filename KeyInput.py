@@ -12,6 +12,10 @@ import keyboard # using module keyboard
 class KeyInput:
     #keyMap is a dict to support remapping controlls
     def __init__(self, keyMap):
+        if type(keyMap) is not dict:
+            raise TypeError(f"keyMap must be a disctionary of at least length 1")
+        if len(keyMap) < 1:
+            raise ValueError(f"keyMap must be a disctionary of at least length 1")
         self.keyMap = keyMap
         self.Exit = False
 
@@ -43,4 +47,3 @@ if __name__ == '__main__':
     print(k.keyMap)
     # while True:
     #     print(k.detect())
-        

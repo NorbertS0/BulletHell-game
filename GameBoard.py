@@ -10,9 +10,10 @@ import os
 import time
 
 class GameBoard:
-    def __init__(self, maxX, maxY, refreshrate=15):
+    def __init__(self, maxX, maxY, refreshrate=15, empty_char=' '):
         self.__maxX = maxX
         self.__maxY = maxY
+        self.__empty_char = empty_char
         
         #refreshrate = refresh screen x times per second
         self.__refreshrate = refreshrate
@@ -20,7 +21,7 @@ class GameBoard:
         self.__refreshwait = math.ceil(1/refreshrate)
         
         #board[y][x] for y down, x right of top left position
-        self.board = [['#' for i in range(maxX)] for i in range(maxY)]
+        self.board = [[self.__empty_char for i in range(maxX)] for i in range(maxY)]
         
         self.prntBoard = True
         
@@ -66,9 +67,9 @@ class GameBoard:
 
 #for testing
 if __name__ == '__main__':
-    b = GameBoard(50, 47, 60)
+    b = GameBoard(50, 47, 60, '#')
     print(b.boardString())
-    b.printBoardCont()
-    # b.modifyBoard({(5,3):'O'})
-    # print(b.boardString())
+    # b.printBoardCont()
+    b.modifyBoard({(5,3):'O'})
+    print(b.boardString())
     # print('after clear')
